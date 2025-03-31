@@ -5,15 +5,17 @@ import config
 class PathSpecBuilder:
     """Builds a pathspec object from .gitignore, exclude patterns, and built-in patterns."""
 
-    def __init__(self, gitignore_path=None, exclude_patterns=None, use_builtin_patterns=True):
+    def __init__(self, base_dir: Path, gitignore_path=None, exclude_patterns=None, use_builtin_patterns=True):
         """
         Initializes the PathSpecBuilder.
 
         Args:
+            base_dir: The root directory against which paths are checked and .gitignore is searched.
             gitignore_path: Path to a specific .gitignore file. None=auto-detect, ""=disable.
             exclude_patterns: List of patterns from CLI to exclude.
             use_builtin_patterns: Whether to include built-in patterns (like .git/).
         """
+        self.base_dir = base_dir
         self.gitignore_path_param = gitignore_path
         self.cli_exclude_patterns = exclude_patterns or []
         # Only use built-ins if gitignore isn't explicitly disabled
@@ -23,21 +25,35 @@ class PathSpecBuilder:
         self.spec = self._build_spec()
 
     def _find_gitignore(self) -> Path | None:
-        """Attempts to find the relevant .gitignore file based on gitignore_path_param."""
-        if isinstance(self.gitignore_path_param, (str, Path)) and self.gitignore_path_param != "":
+        """Attempts to find the relevant .gitignore file based on gitignore_path_param relative to base_dir."""
+        if isinstance(self.gitignore_path_param, (str, Path)) and str(self.gitignore_path_param).strip() != "":
             # Explicit path provided
             potential_gitignore = Path(self.gitignore_path_param)
-            if potential_gitignore.is_file():
-                return potential_gitignore.resolve()
+            if not potential_gitignore.is_absolute():
+                # Resolve relative paths against the base_dir
+                potential_gitignore = (self.base_dir / potential_gitignore).resolve()
             else:
-                print(f"Warning: Specified gitignore file not found: {self.gitignore_path_param}")
+                 # Use the absolute path directly, ensure it's resolved
+                 potential_gitignore = potential_gitignore.resolve()
+
+            if potential_gitignore.is_file():
+                print(f"Using specified gitignore: {potential_gitignore}")
+                return potential_gitignore
+            else:
+                print(f"Warning: Specified gitignore file not found: {self.gitignore_path_param} (resolved to {potential_gitignore})")
                 return None
         elif self.gitignore_path_param is None:
-             # Auto-detect in CWD
-             potential_gitignore = Path('.gitignore')
+             # Auto-detect in the base_dir
+             potential_gitignore = (self.base_dir / '.gitignore').resolve()
              if potential_gitignore.is_file():
-                 return potential_gitignore.resolve()
-        # If disabled or auto-detect failed
+                 print(f"Auto-detected gitignore: {potential_gitignore}")
+                 return potential_gitignore
+             else:
+                 print(f"No .gitignore found in {self.base_dir}") # More specific message
+                 return None
+
+        # If gitignore_path_param was explicitly "" (disabled) or other cases
+        print("Gitignore processing explicitly disabled or no file found.")
         return None
 
     def _load_patterns_from_file(self, gitignore_file: Path) -> list[str]:

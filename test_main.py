@@ -223,7 +223,7 @@ class TestPathSpecBuilder(unittest.TestCase):
      # e.g., test_build_pathspec_disable_gitignore
      def test_builder_no_gitignore_no_exclude(self):
          """Test PathSpecBuilder with no gitignore and no excludes."""
-         builder = PathSpecBuilder(gitignore_path="", exclude_patterns=None)
+         builder = PathSpecBuilder(base_dir=self.test_dir, gitignore_path="", exclude_patterns=None)
          spec = builder.get_spec()
          self.assertIsNotNone(spec)
          # An empty spec should not match anything
@@ -233,7 +233,7 @@ class TestPathSpecBuilder(unittest.TestCase):
      def test_builder_auto_detect_gitignore(self):
          """Test PathSpecBuilder automatically detects .gitignore in cwd."""
          self._create_temp_file("*.log\nbuild/", ".gitignore")
-         builder = PathSpecBuilder(gitignore_path=None, exclude_patterns=None) # None triggers auto-detect
+         builder = PathSpecBuilder(base_dir=self.test_dir, gitignore_path=None, exclude_patterns=None) # None triggers auto-detect
          # Need absolute paths for matching method
          self.assertTrue(builder.matches(self.test_dir / "file.log", self.test_dir, is_dir=False))
          self.assertTrue(builder.matches(self.test_dir / "build", self.test_dir, is_dir=True)) # Check dir match
@@ -247,7 +247,7 @@ class TestPathSpecBuilder(unittest.TestCase):
          # Create a default .gitignore too, to ensure it's not used
          self._create_temp_file("*.log", ".gitignore")
 
-         builder = PathSpecBuilder(gitignore_path=str(ignore_path), exclude_patterns=None)
+         builder = PathSpecBuilder(base_dir=self.test_dir, gitignore_path=str(ignore_path), exclude_patterns=None)
          self.assertTrue(builder.matches(self.test_dir / "file.tmp", self.test_dir, is_dir=False))
          self.assertTrue(builder.matches(self.test_dir / "data", self.test_dir, is_dir=True))
          self.assertTrue(builder.matches(self.test_dir / "data/file", self.test_dir, is_dir=False))
@@ -256,7 +256,7 @@ class TestPathSpecBuilder(unittest.TestCase):
 
      def test_builder_cmd_exclude(self):
          """Test PathSpecBuilder uses command-line exclude patterns."""
-         builder = PathSpecBuilder(gitignore_path="", exclude_patterns=["*.pyc", "dist/"])
+         builder = PathSpecBuilder(base_dir=self.test_dir, gitignore_path="", exclude_patterns=["*.pyc", "dist/"])
          self.assertTrue(builder.matches(self.test_dir / "file.pyc", self.test_dir, is_dir=False))
          self.assertTrue(builder.matches(self.test_dir / "dist", self.test_dir, is_dir=True))
          self.assertTrue(builder.matches(self.test_dir / "dist/app.exe", self.test_dir, is_dir=False))
@@ -265,7 +265,7 @@ class TestPathSpecBuilder(unittest.TestCase):
      def test_builder_combined(self):
          """Test PathSpecBuilder combines gitignore and command-line excludes."""
          self._create_temp_file("*.log\nbuild/", ".gitignore")
-         builder = PathSpecBuilder(gitignore_path=None, exclude_patterns=["*.pyc", "dist/"])
+         builder = PathSpecBuilder(base_dir=self.test_dir, gitignore_path=None, exclude_patterns=["*.pyc", "dist/"])
          self.assertTrue(builder.matches(self.test_dir / "file.log", self.test_dir, is_dir=False))
          self.assertTrue(builder.matches(self.test_dir / "build", self.test_dir, is_dir=True))
          self.assertTrue(builder.matches(self.test_dir / "build/somefile", self.test_dir, is_dir=False))
@@ -277,14 +277,14 @@ class TestPathSpecBuilder(unittest.TestCase):
      def test_builder_disable_gitignore(self):
          """Test PathSpecBuilder disables gitignore loading with empty string."""
          self._create_temp_file("*.log", ".gitignore") # This should be ignored
-         builder = PathSpecBuilder(gitignore_path="", exclude_patterns=["*.pyc"])
+         builder = PathSpecBuilder(base_dir=self.test_dir, gitignore_path="", exclude_patterns=["*.pyc"])
          self.assertFalse(builder.matches(self.test_dir / "file.log", self.test_dir, is_dir=False)) # Not ignored
          self.assertTrue(builder.matches(self.test_dir / "file.pyc", self.test_dir, is_dir=False)) # Excluded via cmd line
 
      def test_builder_gitignore_not_found(self):
          """Test PathSpecBuilder handles non-existent specified gitignore."""
          # Should print a warning but return an empty spec (or spec from excludes)
-         builder = PathSpecBuilder(gitignore_path="nonexistent/.gitignore", exclude_patterns=["*.tmp"])
+         builder = PathSpecBuilder(base_dir=self.test_dir, gitignore_path="nonexistent/.gitignore", exclude_patterns=["*.tmp"])
          # We can capture stderr to check for the warning if needed
          self.assertFalse(builder.matches(self.test_dir / "file.log", self.test_dir, is_dir=False))
          self.assertTrue(builder.matches(self.test_dir / "file.tmp", self.test_dir, is_dir=False)) # Exclude should still work
