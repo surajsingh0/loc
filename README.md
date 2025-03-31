@@ -12,6 +12,11 @@ A command-line tool to count lines of code (LOC) in specified files and director
 *   Accepts additional custom exclusion patterns (gitignore-style).
 *   Optionally counts lines containing only whitespace.
 *   Verbose mode to show processed and ignored files.
+*   Smart file filtering:
+    * Excludes common auto-generated files (package locks, build outputs, etc.)
+    * Excludes binary files and non-code files
+    * Focuses on actual source code files with recognized extensions
+    * Enhanced binary file detection
 
 ## Requirements
 
@@ -78,6 +83,34 @@ python main.py [OPTIONS] PATH [PATH...]
 *   `--count-whitespace`: Count lines containing only whitespace (Default is usually `False`, check `config.py`).
 *   `-v`, `--verbose`: Print names of files being processed and ignored.
 *   `-h`, `--help`: Show the help message and exit.
+
+## File Filtering
+
+The tool uses a multi-layered approach to ensure only relevant code files are counted:
+
+1. **Auto-generated File Exclusions:**
+   * Package management files (package-lock.json, yarn.lock, etc.)
+   * Build outputs (dist/, build/, *.min.js, etc.)
+   * IDE and tooling files (.idea/, .vscode/, __pycache__/, etc.)
+   * Generated documentation and resources
+   * Source maps and type definitions
+
+2. **Extension-based Filtering:**
+   * Excludes common binary and non-code extensions
+   * Includes recognized code file extensions
+   * Configurable through `config.py`
+
+3. **Binary File Detection:**
+   * Checks for null bytes
+   * Analyzes byte patterns for binary content
+   * Validates UTF-8 encoding
+
+4. **Gitignore Integration:**
+   * Respects project's `.gitignore` patterns
+   * Supports custom ignore patterns
+   * Can be disabled if needed
+
+All filtering rules can be customized by modifying the patterns in `config.py`.
 
 ## Contributing
 

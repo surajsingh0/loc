@@ -341,21 +341,18 @@ class TestLocCounterIntegration(unittest.TestCase):
         # Ensure we point to the correct main.py entry script
         main_script_path = script_dir / "main.py"
         if not main_script_path.is_file():
-             # If tests are run from a subdir, adjust path?
-             # Assuming tests run from the project root where main.py is.
              raise FileNotFoundError(f"main.py not found at {main_script_path}")
 
-        command = [python_exe, str(main_script_path)] + args
+        # ALWAYS add --verbose for debugging test failures
+        command = [python_exe, str(main_script_path)]
+        if '--verbose' not in args:
+             command.append('--verbose')
+        command.extend(args)
 
-        # print(f"Debug: Running command: {' '.join(command)} in {Path.cwd()}") # For debugging
-
-        result = subprocess.run(command, capture_output=True, text=True, check=False) # Don't check=True initially
-        # print("Debug STDOUT:", result.stdout) # Debugging
-        # print("Debug STDERR:", result.stderr) # Debugging
+        result = subprocess.run(command, capture_output=True, text=True, check=False)
         return result
 
     # --- Integration Tests ---
-    # These tests remain largely the same as they test the CLI interface.
 
     def test_main_simple_file(self):
         """Test main with a single file target."""
@@ -368,65 +365,54 @@ class TestLocCounterIntegration(unittest.TestCase):
     def test_main_directory_no_ignore(self):
         """Test main with a directory, no ignores active."""
         self._create_project_structure()
-        # Run without activating gitignore (e.g., by specifying non-existent one or "")
-        result = self._run_main(["--gitignore", "", "."]) # Scan current dir
-        # Expected LOC:
-        # src/file1.py: 2
-        # src/file2.js: 2
-        # tests/test_a.py: 1
-        # build/output.log: 1 (treated as text by default, not ignored)
-        # .gitignore: 3
-        # Total: 9
-        # Expected Files: 5 (binary.dat skipped as binary)
-        self.assertIn("Total Lines of Code (LOC): 9", result.stdout)
-        self.assertIn("Total Files Processed:      5", result.stdout)
+        result = self._run_main(["--verbose", "--gitignore", "", "."])
+        # Expect LOC: 5, Files: 3 (ignores .log & .gitignore by config)
+        self.assertIn("Total Lines of Code (LOC): 5", result.stdout)
+        self.assertIn("Total Files Processed:      3", result.stdout)
         self.assertEqual(result.returncode, 0)
+        # Check verbose output confirms skipping
+        self.assertIn(f"Skipping excluded/binary file: {os.path.join('.gitignore')}", result.stdout)
 
 
     def test_main_directory_with_gitignore(self):
         """Test main with a directory, respecting .gitignore."""
         self._create_project_structure() # Creates .gitignore
-        result = self._run_main(["."]) # Auto-detects .gitignore
-        # Expected LOC (ignores *.log, build/, data/):
-        # src/file1.py: 2
-        # src/file2.js: 2
-        # tests/test_a.py: 1
-        # .gitignore: 3 (gitignore itself is not ignored by default by pathspec)
-        # Total: 8
-        # Expected Files: 4 (binary.dat skipped, build/output.log ignored)
-        self.assertIn("Total Lines of Code (LOC): 8", result.stdout)
-        self.assertIn("Total Files Processed:      4", result.stdout)
+        result = self._run_main(["--verbose", "."]) # Auto-detects .gitignore, verbose
+        # Expect LOC: 5, Files: 3 (ignores *.log, build/, data/ by gitignore; .gitignore by config)
+        self.assertIn("Total Lines of Code (LOC): 5", result.stdout)
+        self.assertIn("Total Files Processed:      3", result.stdout)
         self.assertEqual(result.returncode, 0)
+        # Check verbose output confirms skipping .gitignore and ignoring build/data
+        self.assertIn(f"Skipping excluded/binary file: {os.path.join('.gitignore')}", result.stdout)
+        self.assertIn(f"Ignoring: {os.path.join('build')} (matched by spec)", result.stdout)
+        self.assertIn(f"Ignoring: {os.path.join('data')} (matched by spec)", result.stdout)
 
     def test_main_with_cmd_exclude(self):
         """Test main with command-line excludes."""
         self._create_project_structure() # Creates .gitignore
-        # Exclude all .py files via command line, ignore .gitignore file
-        result = self._run_main(["--gitignore", "", "--exclude", "*.py", "."])
-        # Expected LOC (ignores *.py, build/, data/ are not ignored):
-        # src/file2.js: 2
-        # build/output.log: 1 (not ignored by this run)
-        # .gitignore: 3
-        # Total: 6
-        # Expected Files: 3 (binary.dat skipped, *.py ignored)
-        self.assertIn("Total Lines of Code (LOC): 6", result.stdout)
-        self.assertIn("Total Files Processed:      3", result.stdout)
+        result = self._run_main(["--verbose", "--gitignore", "", "--exclude", "*.py", "."])
+        # Expect LOC: 2, Files: 1 (ignores *.py by CLI; .log & .gitignore by config)
+        self.assertIn("Total Lines of Code (LOC): 2", result.stdout)
+        self.assertIn("Total Files Processed:      1", result.stdout)
         self.assertEqual(result.returncode, 0)
+        # Check verbose output confirms skipping
+        self.assertIn(f"Ignoring: {os.path.join('src', 'file1.py')} (matched by spec)", result.stdout)
+        self.assertIn(f"Ignoring: {os.path.join('tests', 'test_a.py')} (matched by spec)", result.stdout)
+        self.assertIn(f"Skipping excluded/binary file: {os.path.join('.gitignore')}", result.stdout)
 
     def test_main_combined_ignores(self):
         """Test main combining .gitignore and command-line excludes."""
-        self._create_project_structure() # Creates .gitignore (ignores *.log, build/, data/)
-        # Also exclude *.js via command line
-        result = self._run_main(["--exclude", "*.js", "."])
-        # Expected LOC (ignores *.log, build/, data/, *.js):
-        # src/file1.py: 2
-        # tests/test_a.py: 1
-        # .gitignore: 3
-        # Total: 6
-        # Expected Files: 3 (binary skipped, build/log ignored, data ignored, *.js ignored)
-        self.assertIn("Total Lines of Code (LOC): 6", result.stdout)
-        self.assertIn("Total Files Processed:      3", result.stdout)
+        self._create_project_structure() # Creates .gitignore
+        result = self._run_main(["--verbose", "--exclude", "*.js", "."])
+        # Expect LOC: 3, Files: 2 (ignores specified files/dirs)
+        self.assertIn("Total Lines of Code (LOC): 3", result.stdout)
+        self.assertIn("Total Files Processed:      2", result.stdout)
         self.assertEqual(result.returncode, 0)
+        # Check verbose output confirms skipping/ignoring
+        self.assertIn(f"Skipping excluded/binary file: {os.path.join('.gitignore')}", result.stdout)
+        self.assertIn(f"Ignoring: {os.path.join('src', 'file2.js')} (matched by spec)", result.stdout)
+        self.assertIn(f"Ignoring: {os.path.join('build')} (matched by spec)", result.stdout)
+        self.assertIn(f"Ignoring: {os.path.join('data')} (matched by spec)", result.stdout)
 
 
     def test_main_verbose_output(self):
@@ -434,27 +420,24 @@ class TestLocCounterIntegration(unittest.TestCase):
          self._create_project_structure() # Creates .gitignore
          result = self._run_main(["--verbose", "."]) # Use auto-detected .gitignore
 
-         # Check for specific processed files (relative paths using os.path.join for OS-native separators)
+         # Check for specific processed files
          self.assertIn(f"Processing file: {os.path.join('src', 'file1.py')}", result.stdout)
          self.assertIn(f"Processing file: {os.path.join('src', 'file2.js')}", result.stdout)
          self.assertIn(f"Processing file: {os.path.join('tests', 'test_a.py')}", result.stdout)
-         self.assertIn(f"Processing file: {os.path.join('.gitignore')}", result.stdout) # os.path.join works for single components too
+         # .gitignore should now be skipped
+         self.assertNotIn(f"Processing file: {os.path.join('.gitignore')}", result.stdout)
+         self.assertIn(f"Skipping excluded/binary file: {os.path.join('.gitignore')}", result.stdout)
 
-         # Check for specific ignored items using the actual output format
-         # The scanner uses relative paths for printing.
-         # Need to check for directory ignores and file ignores within ignored dirs.
-         # The output format is "Ignoring: <relative_path> (matched by spec)"
-         # Use os.path.join for consistent OS-native separator in assertions
+         # Check for specific ignored items
          self.assertIn(f"Ignoring: {os.path.join('build')} (matched by spec)", result.stdout)
          self.assertIn(f"Ignoring: {os.path.join('data')} (matched by spec)", result.stdout)
-         # Check that files *within* ignored dirs are NOT listed as processed/ignored individually
          self.assertNotIn(f"Processing file: {os.path.join('build', 'output.log')}", result.stdout)
          self.assertNotIn(f"Skipping likely binary file: {os.path.join('data', 'binary.dat')}", result.stdout)
-         self.assertNotIn(f"Ignoring: {os.path.join('build', 'output.log')} (matched by spec)", result.stdout) # Should be ignored at dir level
+         self.assertNotIn(f"Ignoring: {os.path.join('build', 'output.log')} (matched by spec)", result.stdout)
 
          # Check final summary
-         self.assertIn("Total Lines of Code (LOC): 8", result.stdout) # Same LOC count
-         self.assertIn("Total Files Processed:      4", result.stdout) # Same file count
+         self.assertIn("Total Lines of Code (LOC): 5", result.stdout)
+         self.assertIn("Total Files Processed:      3", result.stdout)
          self.assertEqual(result.returncode, 0)
 
 
@@ -462,12 +445,11 @@ class TestLocCounterIntegration(unittest.TestCase):
         """Test main handles non-existent target path gracefully."""
         target_name = "nonexistent_dir"
         result = self._run_main([target_name])
-        # The warning comes from the DirectoryScanner now
         self.assertIn(f"Warning: Target path does not exist: {target_name}", result.stdout)
         # Should still produce a summary, even if 0
         self.assertIn("Total Lines of Code (LOC): 0", result.stdout)
         self.assertIn("Total Files Processed:      0", result.stdout)
-        self.assertEqual(result.returncode, 0) # Should exit cleanly
+        self.assertEqual(result.returncode, 0)
 
 
 if __name__ == '__main__':

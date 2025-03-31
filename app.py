@@ -22,7 +22,7 @@ class LocCounterApp:
             epilog="""
 Examples:
   # Count LOC in the current directory, using ./.gitignore if it exists
-  python main.py .  # Note: Run via main.py
+  python main.py .
 
   # Count LOC in specific files and a directory
   python main.py src/main.py src/utils.py tests/
@@ -52,8 +52,8 @@ Examples:
         parser.add_argument(
             '--gitignore',
             metavar='FILE',
-            default=None, # None means auto-detect in cwd
-            help='Path to a specific .gitignore file to use. Pass "" (empty string) to disable loading any .gitignore.'
+            default=None, # None = auto-detect
+            help='Path to a specific .gitignore file. Pass "" to disable .gitignore processing.'
         )
         parser.add_argument(
             '-v', '--verbose',
@@ -68,22 +68,24 @@ Examples:
             help=f'Count lines containing only whitespace (Default: {config.COUNT_WHITESPACE_ONLY_LINES}).'
         )
 
-
         return parser.parse_args()
 
     def run(self):
         """Executes the LOC counting process."""
 
-        # Handle the edge case where user explicitly passes "" for gitignore
+        # Determine gitignore parameter and whether to use built-in ignores
         gitignore_param = self.args.gitignore
-        if self.args.gitignore is not None and self.args.gitignore.strip() == "":
-            gitignore_param = "" # Represent disabling auto-detect/loading
+        use_builtin_ignores = True
+        if isinstance(gitignore_param, str) and gitignore_param.strip() == "":
+            gitignore_param = "" # Normalize to empty string
+            use_builtin_ignores = False
 
-        # 1. Initialize components
+        # Initialize components
         file_processor = FileProcessor(count_whitespace_only_lines=self.args.count_whitespace)
         path_spec_builder = PathSpecBuilder(
             gitignore_path=gitignore_param,
-            exclude_patterns=self.args.exclude
+            exclude_patterns=self.args.exclude,
+            use_builtin_patterns=use_builtin_ignores
         )
         scanner = DirectoryScanner(
             file_processor=file_processor,
@@ -92,24 +94,22 @@ Examples:
             verbose=self.args.verbose
         )
 
-        # 2. Perform the scan
+        # Perform the scan
         total_loc, total_files_processed, processed_files_list = scanner.scan(self.args.targets)
 
-        # 3. Print the results
+        # Print the results
         print("\n--- LOC Count Summary ---")
         print(f"Total Lines of Code (LOC): {total_loc}")
         print(f"Total Files Processed:      {total_files_processed}")
 
-        # Optionally print all processed files if verbose (can be long)
+        # Optionally print processed files list (currently disabled)
         # if self.args.verbose and processed_files_list:
         #     print("\nProcessed Files:")
-        #     # Sort for consistent output
         #     for f in sorted(processed_files_list):
         #         print(f"  - {f}")
 
 if __name__ == '__main__':
-    # This allows running app.py directly for testing if needed,
-    # but the primary entry point will be main.py
+    # Allows running app.py directly for simple testing
     print("Running LocCounterApp directly...")
     app = LocCounterApp()
     app.run()

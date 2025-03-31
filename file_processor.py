@@ -1,5 +1,6 @@
 import config
 from pathlib import Path
+import sys
 
 class FileProcessor:
     """Handles processing of individual files for LOC counting."""
@@ -14,64 +15,74 @@ class FileProcessor:
         self.comment_markers = config.COMMENT_MARKERS
         self.count_whitespace_only_lines = count_whitespace_only_lines
 
+    def is_code_file(self, filepath: Path) -> bool:
+        """
+        Determines if a file should be counted based on config and content checks.
+        """
+        extension = filepath.suffix.lower()
+        name = filepath.name.lower()
+
+        # 1. Check explicit exclusions
+        if extension in config.EXCLUDED_EXTENSIONS or name in config.EXCLUDED_EXTENSIONS:
+            return False
+
+        # 2. Check explicit inclusions
+        if config.INCLUDED_EXTENSIONS and extension and extension in config.INCLUDED_EXTENSIONS:
+             return True
+
+        # 3. Fallback: Check if it's likely a text file
+        return self.is_likely_text_file(filepath)
+
     def is_likely_text_file(self, filepath: Path) -> bool:
         """
-        Tries to determine if a file is text-based and not binary.
-
-        Args:
-            filepath (Path): The path to the file.
-
-        Returns:
-            bool: True if the file is likely text-based, False otherwise.
+        Tries to determine if a file is text-based (not binary).
+        Uses null byte check, non-ASCII ratio, and UTF-8 decode attempt.
         """
         try:
-            # Read a small chunk; if it contains a null byte, likely binary
             with open(filepath, 'rb') as f:
                 chunk = f.read(1024)
-                if b'\0' in chunk:
+                if not chunk: # Empty file is text
+                    return True
+                if b'\0' in chunk: # Null byte -> binary
                     return False
-            # Try decoding a small chunk as UTF-8 as a further check
+
+                # Check for high concentration of non-ASCII bytes
+                non_ascii_count = sum(1 for byte in chunk if byte > 127)
+                if len(chunk) > 0 and non_ascii_count / len(chunk) > 0.3:
+                    return False
+
+            # Final check: Can it be decoded as UTF-8?
             with open(filepath, 'r', encoding='utf-8', errors='strict') as f:
-                f.read(1024)
+                f.read(512)
             return True
-        except (IOError, UnicodeDecodeError):
-            # Common issues indicating non-text or encoding problems
+        except (IOError, OSError): # File not found or readable
             return False
-        except Exception:
-            # Catch other potential issues but assume text for safety if unsure
-            # or handle more specific exceptions if needed
-            # Consider logging this edge case if necessary
-            return True # Or False, depending on desired behavior
+        except UnicodeDecodeError: # Definitely not UTF-8 text
+            return False
+        except Exception: # Other errors
+             return False # Be cautious
 
     def count_lines_in_file(self, filepath: Path) -> int:
         """
-        Counts non-empty, non-comment lines in a single file.
-
-        Args:
-            filepath (Path): The path to the file.
-
-        Returns:
-            int: The number of lines of code (LOC) counted.
+        Counts non-empty, non-comment lines in a file, assuming it IS a code file.
+        The check `is_code_file` should be done before calling this.
         """
         loc = 0
         try:
-            # Use utf-8 encoding, common for code; handle errors gracefully
             with open(filepath, 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
-                    # 1. Strip trailing newline/carriage return first
                     original_line_content = line.rstrip('\n\r')
 
-                    # 2. Skip truly empty lines
-                    if not original_line_content:
+                    if not original_line_content: # Skip empty lines
                         continue
 
-                    # 3. Check for whitespace-only lines
                     stripped_line = original_line_content.strip()
-                    if not stripped_line:  # Line contains only whitespace
-                        if not self.count_whitespace_only_lines:
-                            continue  # Skip if configured to ignore
+                    if not stripped_line:  # Line has only whitespace
+                        if self.count_whitespace_only_lines:
+                            loc += 1 # Count if configured to do so
+                        continue # Otherwise skip
 
-                    # 4. Check if the line starts with any known comment marker
+                    # Check for comment markers
                     is_comment = False
                     for marker in self.comment_markers:
                         if stripped_line.startswith(marker):
@@ -83,6 +94,5 @@ class FileProcessor:
         except IOError as e:
             print(f"Warning: Could not read file {filepath}: {e}")
         except Exception as e:
-            # Catch potential decoding issues not caught by errors='ignore'
             print(f"Warning: Error processing file {filepath}: {e}")
         return loc
